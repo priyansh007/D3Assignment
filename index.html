@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<style>
+
+.node {
+  font: 10px sans-serif;
+}
+
+.link {
+  stroke: steelblue;
+  stroke-opacity: 0.5;
+  fill: none;
+  pointer-events: none;
+}
+
+</style>
+<body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script>
+var final_dog_data_set = [];
+
+var rocket = [];
+d3.csv("Data/Dogs-Database.csv", function(dog_data_set) {
+  d3.csv("Data/Flights-Database.csv", function(flights_data_set) {
+    var c = 0;
+    for (var i = 0; i < dog_data_set.length; i++) {
+      date_array = dog_data_set[i]["Flights"].split(",")
+      final_dog_data_set[c] = {
+      name: dog_data_set[i]["Name (Latin)"],
+      size: date_array.length,
+      imports: date_array
+    }
+    c += 1;
+
+    };
+    
+
+    for(var i = 0; i < flights_data_set.length; i++){
+      rocket_array = flights_data_set[i]["Rocket"].split(", ")
+      temp = {
+        name: flights_data_set[i]["Date"],
+        size: rocket_array.length,
+        imports: rocket_array
+      }
+      rocket = [].concat(rocket, rocket_array);
+      final_dog_data_set.push(temp)
+    }
+    var rocket_set = new Set(rocket);
+    rocket = Array.from(rocket_set);
+    console.log(rocket);
+    for(var i = 0; i < rocket.length; i++){
+      temp = {
+        name: rocket[i],
+        size: 1,
+        imports: []
+      }
+      final_dog_data_set.push(temp)
+    }
+    console.log(final_dog_data_set);
+
+
+    var diameter = 960,
+        radius = diameter / 2,
+        innerRadius = radius - 120;
+
+    var cluster = d3.cluster()
+        .size([360, innerRadius]);
+
+    var line = d3.radialLine()
+        .curve(d3.curveBundle.beta(0.85))
+        .radius(function(d) { return d.y; })
+        .angle(function(d) { return d.x / 180 * Math.PI; });
+
+    var svg = d3.select("body").append("svg")
+        .attr("width", diameter)
+        .attr("height", diameter)
+      .append("g")
+        .attr("transform", "translate(" + radius + "," + radius + ")")
+
+
+    var link = svg.append("g").selectAll(".link");
+        node = svg.append("g").selectAll(".node");
+
+    d3.json("flare.json", function(error, classes) {
+      if (error) throw error;
+      var root = packageHierarchy(final_dog_data_set)
+          .sum(function(d) { return d.size; });
+      console.log(root)
+      cluster(root);
+
+      link = link
+        .data(packageImports(root.leaves()))
+        .enter().append("path")
+          .each(function(d) { d.source = d[0], d.target = d[d.length - 1]; })
+          .attr("class", "link")
+          .attr("d", line);
+
+      node = node
+        .data(root.leaves())
+        .enter().append("text")
+          .attr("class", "node")
+          .attr("dy", "0.31em")
+          .attr("transform", function(d) { return "rotate(" + (d.x - 90) + ")translate(" + (d.y + 8) + ",0)" + (d.x < 180 ? "" : "rotate(180)"); })
+          .attr("text-anchor", function(d) { return d.x < 180 ? "start" : "end"; })
+          .text(function(d) { return d.data.key; });
+
+      node
+      .on('mouseover', function (d) {
+        // Highlight the nodes: every node is green except of him
+        node.style('fill', "#b8b8b8")
+        d3.select(this).style('fill', '#150050')
+        // Highlight the connections
+        link
+          .style('stroke', function (link_d) { 
+            return link_d.source.data.key === d.data.key ? '#150050' : '#b8b8b8';})
+          .style('stroke-width', function (link_d) { return link_d.source.data.key === d.data.key ? 4 : 1;})
+      })
+      .on('mouseout', function (d) {
+        node.style('fill', "#b8b8b8")
+        link
+          .style('stroke', '#b8b8b8')
+          .style('stroke-width', '1')
+      })
+    });
+    });
+});
+
+
+// Lazily construct the package hierarchy from class names.
+function packageHierarchy(classes) {
+  var map = {};
+
+  function find(name, data) {
+    var node = map[name], i;
+    if (!node) {
+      node = map[name] = data || {name: name, children: []};
+      if (name.length) {
+        node.parent = find(name.substring(0, i = name.lastIndexOf(".")));
+        node.parent.children.push(node);
+        node.key = name.substring(i + 1);
+      }
+    }
+    return node;
+  }
+
+  classes.forEach(function(d) {
+    find(d.name, d);
+  });
+
+  return d3.hierarchy(map[""]);
+}
+
+// Return a list of imports for the given array of nodes.
+function packageImports(nodes) {
+  var map = {},
+      imports = [];
+
+  // Compute a map from name to node.
+  nodes.forEach(function(d) {
+    map[d.data.name] = d;
+  });
+
+  // For each import, construct a link from the source to target node.
+  nodes.forEach(function(d) {
+    if (d.data.imports) d.data.imports.forEach(function(i) {
+      imports.push(map[d.data.name].path(map[i]));
+    });
+  });
+
+  return imports;
+}
+
+</script>
